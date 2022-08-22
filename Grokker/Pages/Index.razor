@@ -2,12 +2,13 @@
 @using Grokker.Data
 @using System.Text.Json
 @using System.Text.Json.Serialization
+@using System.Collections.ObjectModel
 @inject IHttpClientFactory ClientFactory
 
 
 <PageTitle>Index</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>Comments</h1>
 
 @if (getItemError)
 {
@@ -15,16 +16,21 @@
 }
 else
 {
-    @JsonSerializer.Serialize(item, serializeOptions)
-    
-    @* @item.Type.ToString() *@
+    foreach (var item in _items.Where(x => x.Type == ItemType.Comment))
+    {
+        <p>@item.Text </p>
+        <p>—@item.AuthorId on @item.CreationTime.ToLocalTime()</p>
+        <hr/>
+    }
 }
 
 @code {
-    private Item item;
+    private readonly IList<Item> _items = new Collection<Item>();
     private bool getItemError;
     private bool shouldRender;
-
+    private HttpClient _client;
+    private User _user;
+    
     private JsonSerializerOptions serializeOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -39,25 +45,59 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get,
-            "https://hacker-news.firebaseio.com/v0/item/31707714.json");
-        request.Headers.Add("Accept", "application/json");
-        request.Headers.Add("User-Agent", "HttpClientFactory-Sample");
+        _client = ClientFactory.CreateClient();
 
-        var client = ClientFactory.CreateClient();
-
-        var response = await client.SendAsync(request);
-
-        if (response.IsSuccessStatusCode)
+        try
         {
-            item = await JsonSerializer.DeserializeAsync<Item>(await response.Content.ReadAsStreamAsync(), serializeOptions) ?? throw new InvalidOperationException();
+            _user = await GetUserById("tshell");
+            foreach (var submissionId in _user.Submitted)
+            {
+                var item = await GetItemById(submissionId);
+                _items.Add(item);
+            }
         }
-        else
+        catch
         {
             getItemError = true;
+            return;
         }
         
         shouldRender = true;
     }
 
+    private async Task<User> GetUserById(string id)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get,
+            "https://hacker-news.firebaseio.com/v0/user/" + id + ".json");
+        request.Headers.Add("Accept", "application/json");
+        request.Headers.Add("User-Agent", "HttpClientFactory-Sample");
+
+        var response = await _client.SendAsync(request);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new BadHttpRequestException("oops");
+        }
+        return await JsonSerializer.DeserializeAsync<User>(
+            await response.Content.ReadAsStreamAsync(), serializeOptions) 
+               ?? throw new InvalidOperationException();
+    }
+
+    private async Task<Item> GetItemById(int id)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get,
+            "https://hacker-news.firebaseio.com/v0/item/" + id + ".json");
+        request.Headers.Add("Accept", "application/json");
+        request.Headers.Add("User-Agent", "HttpClientFactory-Sample");
+
+        var response = await _client.SendAsync(request);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new BadHttpRequestException("oops");
+        }
+        return await JsonSerializer.DeserializeAsync<Item>(
+            await response.Content.ReadAsStreamAsync(), serializeOptions) 
+               ?? throw new InvalidOperationException();
+    }
 }
