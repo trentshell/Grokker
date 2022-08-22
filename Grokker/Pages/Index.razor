@@ -1,0 +1,63 @@
+﻿@page "/"
+@using Grokker.Data
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@inject IHttpClientFactory ClientFactory
+
+
+<PageTitle>Index</PageTitle>
+
+<h1>Hello, world!</h1>
+
+@if (getItemError)
+{
+    <p>Unable to get HN comment. Please try again later.</p>
+}
+else
+{
+    @JsonSerializer.Serialize(item, serializeOptions)
+    
+    @* @item.Type.ToString() *@
+}
+
+@code {
+    private Item item;
+    private bool getItemError;
+    private bool shouldRender;
+
+    private JsonSerializerOptions serializeOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+        Converters =
+        {
+            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)
+        }
+    };
+    protected override bool ShouldRender() => shouldRender;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get,
+            "https://hacker-news.firebaseio.com/v0/item/31707714.json");
+        request.Headers.Add("Accept", "application/json");
+        request.Headers.Add("User-Agent", "HttpClientFactory-Sample");
+
+        var client = ClientFactory.CreateClient();
+
+        var response = await client.SendAsync(request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            item = await JsonSerializer.DeserializeAsync<Item>(await response.Content.ReadAsStreamAsync(), serializeOptions) ?? throw new InvalidOperationException();
+        }
+        else
+        {
+            getItemError = true;
+        }
+        
+        shouldRender = true;
+    }
+
+}
